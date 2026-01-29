@@ -1,8 +1,9 @@
-import { motion, AnimatePresence } from "framer-motion";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence, useMotionValue, useTransform, PanInfo } from "framer-motion";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Orb, { type OrbState } from "@/components/Orb";
-import TranscriptOverlay from "@/components/TranscriptOverlay";
+import ChatInput from "@/components/ChatInput";
+import ChatTranscript from "@/components/ChatTranscript";
 import { Settings, Brain } from "lucide-react";
 
 interface Message {
@@ -10,80 +11,132 @@ interface Message {
   content: string;
 }
 
+type InteractionMode = "presence" | "chat";
+
 const Home = () => {
   const navigate = useNavigate();
   const [orbState, setOrbState] = useState<OrbState>("idle");
-  const [subtitle, setSubtitle] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
+  const [mode, setMode] = useState<InteractionMode>("presence");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  
   const holdTimerRef = useRef<number | null>(null);
-  const longPressRef = useRef<number | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  
+  // Motion values for orb position during drag
+  const orbX = useMotionValue(0);
+  const orbOpacity = useTransform(orbX, [-150, 0], [0.6, 1]);
+  const orbScale = useTransform(orbX, [-150, 0], [0.7, 1]);
 
-  // Simulate conversation flow
-  const handleInteraction = useCallback(() => {
-    // User spoke (simulated)
-    const userMessage = "Hello, NEX.";
-    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
-
-    // NEX thinking
+  // Simulate NEX response
+  const simulateNexResponse = useCallback((userMessage: string) => {
     setOrbState("thinking");
-
+    
     setTimeout(() => {
-      // NEX speaking
       setOrbState("speaking");
-      setSubtitle("Hi, I am NEX.");
-      setMessages((prev) => [...prev, { role: "nex", content: "Hi, I am NEX." }]);
-
+      
+      // Hardcoded responses for variety
+      const responses = [
+        "Hi, I am NEX.",
+        "I'm here with you.",
+        "I hear you.",
+        "Take your time.",
+        "I'm listening.",
+      ];
+      const response = responses[Math.floor(Math.random() * responses.length)];
+      
+      setMessages(prev => [...prev, { role: "nex", content: response }]);
+      
       setTimeout(() => {
-        // Back to idle
         setOrbState("idle");
-        // Fade out subtitle
-        setTimeout(() => setSubtitle(null), 2000);
       }, 2000);
     }, 1500);
   }, []);
 
+  // Handle voice interaction (press to talk)
   const handlePressStart = useCallback(() => {
+    if (mode === "chat") return;
+    
     holdTimerRef.current = window.setTimeout(() => {
       setOrbState("listening");
     }, 100);
-
-    // Long press detection for transcript
-    longPressRef.current = window.setTimeout(() => {
-      setShowTranscript(true);
-    }, 2000);
-  }, []);
+  }, [mode]);
 
   const handlePressEnd = useCallback(() => {
     if (holdTimerRef.current) {
       clearTimeout(holdTimerRef.current);
     }
-    if (longPressRef.current) {
-      clearTimeout(longPressRef.current);
-    }
 
     if (orbState === "listening") {
-      handleInteraction();
+      const userMessage = "Hello, NEX.";
+      setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+      simulateNexResponse(userMessage);
     }
-  }, [orbState, handleInteraction]);
+  }, [orbState, simulateNexResponse]);
+
+  // Handle orb swipe gesture
+  const handleOrbPanStart = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (mode === "chat") return;
+    swipeStartRef.current = { x: info.point.x, y: info.point.y };
+  }, [mode]);
+
+  const handleOrbPan = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (mode === "chat" || isTransitioning) return;
+    // Only track horizontal movement to the left
+    if (info.offset.x < 0) {
+      orbX.set(info.offset.x);
+    }
+  }, [mode, isTransitioning, orbX]);
+
+  const handleOrbPanEnd = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (mode === "chat" || isTransitioning) return;
+    
+    // Threshold for mode switch
+    if (info.offset.x < -80 || info.velocity.x < -500) {
+      // Transition to chat mode
+      setIsTransitioning(true);
+      setMode("chat");
+      
+      // Animate to final position
+      setTimeout(() => {
+        orbX.set(0);
+        setIsTransitioning(false);
+      }, 50);
+    } else {
+      // Snap back
+      orbX.set(0);
+    }
+    
+    swipeStartRef.current = null;
+  }, [mode, isTransitioning, orbX]);
+
+  // Handle chat input send
+  const handleSendMessage = useCallback((message: string) => {
+    setMessages(prev => [...prev, { role: "user", content: message }]);
+    simulateNexResponse(message);
+  }, [simulateNexResponse]);
+
+  // Handle return to presence mode
+  const handleReturnToPresence = useCallback(() => {
+    setIsTransitioning(true);
+    setMode("presence");
+    setTimeout(() => setIsTransitioning(false), 400);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && !e.repeat) {
+      if (e.code === "Space" && !e.repeat && mode === "presence") {
         e.preventDefault();
         handlePressStart();
       }
-      if (e.code === "KeyT") {
-        setShowTranscript((prev) => !prev);
-      }
-      if (e.code === "Escape") {
-        setShowTranscript(false);
+      if (e.code === "Escape" && mode === "chat") {
+        handleReturnToPresence();
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") {
+      if (e.code === "Space" && mode === "presence") {
         e.preventDefault();
         handlePressEnd();
       }
@@ -96,20 +149,40 @@ const Home = () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [handlePressStart, handlePressEnd]);
+  }, [handlePressStart, handlePressEnd, handleReturnToPresence, mode]);
+
+  // Orb positioning based on mode
+  const getOrbContainerStyles = () => {
+    if (mode === "chat") {
+      return {
+        position: "fixed" as const,
+        left: "24px",
+        bottom: "24px",
+        transform: "none",
+      };
+    }
+    return {
+      position: "absolute" as const,
+      left: "50%",
+      top: "75%", // Centered in lower half, slightly toward bottom
+      transform: "translate(-50%, -50%)",
+    };
+  };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background relative overflow-hidden select-none">
+    <div className="min-h-screen flex flex-col bg-background relative overflow-hidden select-none">
       {/* Ambient background glow */}
-      <div
+      <motion.div
         className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(ellipse at 50% 50%, hsl(var(--orb) / 0.05), transparent 60%)",
+        animate={{
+          background: mode === "chat" 
+            ? "radial-gradient(ellipse at 10% 90%, hsl(var(--orb) / 0.03), transparent 50%)"
+            : "radial-gradient(ellipse at 50% 75%, hsl(var(--orb) / 0.05), transparent 60%)",
         }}
+        transition={{ duration: 0.8 }}
       />
 
-      {/* Navigation buttons - very subtle */}
+      {/* Navigation buttons */}
       <motion.div
         className="absolute top-6 right-6 flex gap-4 z-20"
         initial={{ opacity: 0 }}
@@ -134,52 +207,105 @@ const Home = () => {
         </button>
       </motion.div>
 
-      {/* The Orb - center of everything */}
-      <motion.div
-        className="z-10"
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 1, ease: "easeOut" }}
-        onMouseDown={handlePressStart}
-        onMouseUp={handlePressEnd}
-        onMouseLeave={handlePressEnd}
-        onTouchStart={handlePressStart}
-        onTouchEnd={handlePressEnd}
-      >
-        <Orb state={orbState} size="lg" />
-      </motion.div>
+      {/* Transcript area */}
+      <ChatTranscript 
+        messages={messages} 
+        isExpanded={mode === "chat"} 
+        showHint={mode === "presence" && messages.length === 0}
+      />
 
-      {/* Subtitle text */}
+      {/* Chat input (only in chat mode) */}
       <AnimatePresence>
-        {subtitle && (
-          <motion.p
-            className="absolute bottom-1/4 text-foreground-muted text-lg tracking-wide text-center px-8"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.5 }}
-          >
-            {subtitle}
-          </motion.p>
+        {mode === "chat" && (
+          <ChatInput
+            onSend={handleSendMessage}
+            onSwipeRight={handleReturnToPresence}
+            isVisible={mode === "chat"}
+          />
         )}
       </AnimatePresence>
 
-      {/* Hint text */}
-      <motion.p
-        className="absolute bottom-8 text-foreground-subtle text-sm"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.5 }}
+      {/* The Orb */}
+      <motion.div
+        className="z-10"
+        style={getOrbContainerStyles()}
+        animate={{
+          scale: mode === "chat" ? 0.4 : 1,
+        }}
+        transition={{ 
+          type: "spring", 
+          damping: 25, 
+          stiffness: 200,
+        }}
       >
-        Press and hold to speak
-      </motion.p>
+        <motion.div
+          style={{ 
+            x: mode === "presence" ? orbX : 0,
+            opacity: mode === "presence" ? orbOpacity : 0.8,
+            scale: mode === "presence" ? orbScale : 1,
+          }}
+          drag={mode === "presence" ? "x" : false}
+          dragConstraints={{ left: -200, right: 0 }}
+          dragElastic={0.1}
+          onPanStart={handleOrbPanStart}
+          onPan={handleOrbPan}
+          onPanEnd={handleOrbPanEnd}
+          onMouseDown={mode === "presence" ? handlePressStart : undefined}
+          onMouseUp={mode === "presence" ? handlePressEnd : undefined}
+          onMouseLeave={mode === "presence" ? handlePressEnd : undefined}
+          onTouchStart={mode === "presence" ? handlePressStart : undefined}
+          onTouchEnd={mode === "presence" ? handlePressEnd : undefined}
+          whileTap={mode === "presence" ? { scale: 1.05 } : undefined}
+        >
+          <Orb 
+            state={orbState} 
+            size={mode === "chat" ? "sm" : "lg"} 
+            onClick={mode === "chat" ? handleReturnToPresence : undefined}
+          />
+        </motion.div>
+      </motion.div>
 
-      {/* Transcript overlay */}
-      <TranscriptOverlay
-        isOpen={showTranscript}
-        onClose={() => setShowTranscript(false)}
-        messages={messages}
-      />
+      {/* Hint text (presence mode only) */}
+      <AnimatePresence>
+        {mode === "presence" && (
+          <motion.div
+            className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-2"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <p className="text-foreground-subtle text-sm">
+              Press and hold to speak
+            </p>
+            <motion.p 
+              className="text-foreground-subtle/50 text-xs"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 2 }}
+            >
+              ← swipe orb to type
+            </motion.p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Chat mode hint for returning */}
+      <AnimatePresence>
+        {mode === "chat" && (
+          <motion.div
+            className="fixed bottom-6 left-20 z-10"
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 0.4, x: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ delay: 1, duration: 0.5 }}
+          >
+            <p className="text-foreground-subtle text-xs">
+              tap orb to return
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
