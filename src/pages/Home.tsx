@@ -5,6 +5,8 @@ import Orb, { type OrbState } from "@/components/Orb";
 import ChatInput from "@/components/ChatInput";
 import ChatTranscript from "@/components/ChatTranscript";
 import { Settings, Brain } from "lucide-react";
+import { api } from "@/services/api";
+import { toast } from "sonner";
 
 interface Message {
   role: "user" | "nex";
@@ -28,29 +30,27 @@ const Home = () => {
   const orbOpacity = useTransform(orbX, [-150, 0], [0.6, 1]);
   const orbScale = useTransform(orbX, [-150, 0], [0.7, 1]);
 
-  // Simulate NEX response
-  const simulateNexResponse = useCallback((userMessage: string) => {
+
+// ... imports
+
+  // Interact with NEX API
+  const handleNexInteraction = useCallback(async (userMessage: string) => {
     setOrbState("thinking");
     
-    setTimeout(() => {
+    try {
+      const response = await api.interact(userMessage);
+      
       setOrbState("speaking");
-      
-      // Hardcoded responses for variety
-      const responses = [
-        "Hi, I am NEX.",
-        "I'm here with you.",
-        "I hear you.",
-        "Take your time.",
-        "I'm listening.",
-      ];
-      const response = responses[Math.floor(Math.random() * responses.length)];
-      
-      setMessages(prev => [...prev, { role: "nex", content: response }]);
+      setMessages(prev => [...prev, { role: "nex", content: response.reply }]);
       
       setTimeout(() => {
         setOrbState("idle");
-      }, 2000);
-    }, 1500);
+      }, 2000); // Keep speaking state briefly for effect
+    } catch (error) {
+      console.error("Error interacting with NEX:", error);
+      toast.error("Failed to connect to NEX.");
+      setOrbState("idle");
+    }
   }, []);
 
   // Handle voice interaction (press to talk)
@@ -68,11 +68,11 @@ const Home = () => {
     }
 
     if (orbState === "listening") {
-      const userMessage = "Hello, NEX.";
-      setMessages(prev => [...prev, { role: "user", content: userMessage }]);
-      simulateNexResponse(userMessage);
+      // User requested to remove the auto "Hello NEX" message.
+      // We just return to idle state.
+      setOrbState("idle");
     }
-  }, [orbState, simulateNexResponse]);
+  }, [orbState]);
 
   // Handle orb swipe gesture
   const handleOrbPanStart = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -113,8 +113,8 @@ const Home = () => {
   // Handle chat input send
   const handleSendMessage = useCallback((message: string) => {
     setMessages(prev => [...prev, { role: "user", content: message }]);
-    simulateNexResponse(message);
-  }, [simulateNexResponse]);
+    handleNexInteraction(message);
+  }, [handleNexInteraction]);
 
   // Handle return to presence mode
   const handleReturnToPresence = useCallback(() => {

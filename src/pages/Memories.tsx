@@ -1,38 +1,55 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { api } from "@/services/api";
+import { toast } from "sonner";
 
 interface Memory {
   id: string;
   content: string;
+  created_at?: string;
 }
-
-const initialMemories: Memory[] = [
-  { id: "1", content: "You live in Bangalore" },
-  { id: "2", content: "You prefer calm conversations" },
-  { id: "3", content: "You work in technology" },
-  { id: "4", content: "You enjoy late-night thinking sessions" },
-];
 
 const Memories = () => {
   const navigate = useNavigate();
-  const [memories, setMemories] = useState<Memory[]>(initialMemories);
+  const [memories, setMemories] = useState<Memory[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [newMemory, setNewMemory] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadMemories();
+  }, []);
+
+  const loadMemories = async () => {
+    try {
+      const data = await api.getMemories();
+      if (data && data.items) {
+        setMemories(data.items);
+      }
+    } catch (error) {
+      console.error("Failed to load memories:", error);
+      toast.error("Failed to load memories");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEdit = (memory: Memory) => {
+    // API doesn't support update yet, so UI only allows viewing mostly
+    // But if we want to enable edit in UI and mock backend or wait for backend support:
     setEditingId(memory.id);
     setEditValue(memory.content);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (editingId && editValue.trim()) {
-      setMemories((prev) =>
-        prev.map((m) => (m.id === editingId ? { ...m, content: editValue } : m))
-      );
+      // TODO: Implement update API when available
+      // For now, optimistic update or just disable save
+      toast.info("Update not supported by API yet");
       setEditingId(null);
       setEditValue("");
     }
@@ -43,18 +60,23 @@ const Memories = () => {
     setEditValue("");
   };
 
-  const handleDelete = (id: string) => {
-    setMemories((prev) => prev.filter((m) => m.id !== id));
+  const handleDelete = async (id: string) => {
+     // TODO: Implement delete API when available
+     toast.info("Delete not supported by API yet");
   };
 
-  const handleAddMemory = () => {
+  const handleAddMemory = async () => {
     if (newMemory.trim()) {
-      setMemories((prev) => [
-        ...prev,
-        { id: Date.now().toString(), content: newMemory },
-      ]);
-      setNewMemory("");
-      setIsAdding(false);
+      try {
+        await api.createMemory(newMemory);
+        setNewMemory("");
+        setIsAdding(false);
+        toast.success("Memory created");
+        loadMemories(); // Reload to get updated list
+      } catch (error) {
+        console.error("Failed to create memory:", error);
+        toast.error("Failed to save memory");
+      }
     }
   };
 

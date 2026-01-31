@@ -1,23 +1,80 @@
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { toast } from "sonner";
 
 const EmailLogin = () => {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    // Check if this is a sign-in link
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      setVerifying(true);
+      let emailForSignIn = window.localStorage.getItem('emailForSignIn');
+      if (!emailForSignIn) {
+        // User opened link on different device/browser, ask for email
+        emailForSignIn = window.prompt('Please provide your email for confirmation');
+      }
+
+      if (emailForSignIn) {
+        signInWithEmailLink(auth, emailForSignIn, window.location.href)
+          .then(() => {
+            window.localStorage.removeItem('emailForSignIn');
+            toast.success("Successfully signed in!");
+            navigate("/home");
+          })
+          .catch((error) => {
+            console.error("Error signing in with email link", error);
+            toast.error("Failed to sign in. Link might be expired.");
+            setVerifying(false);
+          });
+      } else {
+        setVerifying(false);
+      }
+    }
+  }, [navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (email) {
-      setSent(true);
-      // Simulate magic link sent, auto-advance after delay
-      setTimeout(() => {
-        navigate("/home");
-      }, 2500);
+      setLoading(true);
+      const actionCodeSettings = {
+        // URL you want to redirect back to. The domain (www.example.com) for this
+        // URL must be in the authorized domains list in the Firebase Console.
+        url: window.location.href, // Redirect back to this page to handle verification
+        handleCodeInApp: true,
+      };
+
+      try {
+        await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+        window.localStorage.setItem('emailForSignIn', email);
+        setSent(true);
+        toast.success("Magic link sent!");
+      } catch (error) {
+        console.error("Error sending email link", error);
+        // @ts-ignore
+        toast.error(`Error sending link: ${error.message}`);
+      } finally {
+        setLoading(false);
+      }
     }
   };
+
+  if (verifying) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
+        <span className="ml-3 text-foreground">Verifying login...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background relative overflow-hidden">
@@ -69,17 +126,18 @@ const EmailLogin = () => {
                            placeholder:text-foreground-subtle rounded-2xl outline-none
                            focus:ring-2 focus:ring-orb/30 transition-all duration-300"
                 autoFocus
+                disabled={loading}
               />
               <motion.button
                 type="submit"
                 className="w-full py-4 px-6 bg-primary text-primary-foreground 
                            rounded-2xl font-medium transition-all duration-300
                            hover:opacity-90 disabled:opacity-50"
-                disabled={!email}
+                disabled={!email || loading}
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
               >
-                Send link
+                {loading ? "Sending..." : "Send link"}
               </motion.button>
             </motion.form>
           </>
@@ -137,6 +195,13 @@ const EmailLogin = () => {
               >
                 Taking you in...
               </motion.p>
+              
+              <button 
+                onClick={() => setSent(false)}
+                className="text-sm text-primary hover:text-primary/80 mt-2"
+              >
+                Try different email
+              </button>
             </motion.div>
           </>
         )}
