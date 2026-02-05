@@ -47,11 +47,16 @@ const Memories = () => {
 
   const handleSaveEdit = async () => {
     if (editingId && editValue.trim()) {
-      // TODO: Implement update API when available
-      // For now, optimistic update or just disable save
-      toast.info("Update not supported by API yet");
-      setEditingId(null);
-      setEditValue("");
+      try {
+        await api.updateMemory(editingId, editValue);
+        toast.success("Memory updated");
+        setEditingId(null);
+        setEditValue("");
+        loadMemories(); // Refresh list
+      } catch (error) {
+        console.error("Failed to update memory:", error);
+        toast.error("Failed to update memory");
+      }
     }
   };
 
@@ -61,8 +66,14 @@ const Memories = () => {
   };
 
   const handleDelete = async (id: string) => {
-     // TODO: Implement delete API when available
-     toast.info("Delete not supported by API yet");
+    try {
+      await api.deleteMemory(id);
+      toast.success("Memory deleted");
+      loadMemories(); // Refresh list
+    } catch (error) {
+      console.error("Failed to delete memory:", error);
+      toast.error("Failed to delete memory");
+    }
   };
 
   const handleAddMemory = async () => {

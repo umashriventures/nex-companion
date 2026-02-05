@@ -50,6 +50,16 @@ export const api = {
         return response.data;
     },
 
+    updateMemory: async (memoryId: string, content: string) => {
+        const response = await apiInstance.put(`/memory/${memoryId}`, { content });
+        return response.data;
+    },
+
+    deleteMemory: async (memoryId: string) => {
+        const response = await apiInstance.delete(`/memory/${memoryId}`);
+        return response.data;
+    },
+
     getSubscriptionStatus: async () => {
         const response = await apiInstance.get('/subscription/status');
         return response.data;
