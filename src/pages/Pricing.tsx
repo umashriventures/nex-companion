@@ -5,6 +5,7 @@ import Orb from "@/components/Orb";
 import { api } from "@/services/api";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { auth } from "@/lib/firebase"; // Need auth to get user details if desired for prefill
 
 interface PlanTier {
   name: string;
@@ -17,7 +18,7 @@ interface PlanTier {
 const plans: PlanTier[] = [
   {
     name: "Free",
-    id: "TIER_FREE", // Assuming default or unknown
+    id: "TIER_FREE",
     price: "$0",
     period: "forever",
     features: ["5 conversations per day", "Basic memory", "Voice interaction"],
@@ -36,7 +37,7 @@ const plans: PlanTier[] = [
   },
   {
     name: "Unlimited",
-    id: "TIER_2", // Assuming next tier
+    id: "TIER_2",
     price: "$29",
     period: "per month",
     features: [
@@ -47,6 +48,21 @@ const plans: PlanTier[] = [
     ],
   },
 ];
+
+// Helper to load Razorpay script
+const loadRazorpayScript = () => {
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => {
+      resolve(true);
+    };
+    script.onerror = () => {
+      resolve(false);
+    };
+    document.body.appendChild(script);
+  });
+};
 
 const Pricing = () => {
   const navigate = useNavigate();
@@ -71,12 +87,70 @@ const Pricing = () => {
   const handleUpgrade = async (tierId: string) => {
     setLoading(true);
     try {
-      await api.upgradeSubscription(tierId);
-      toast.success("Subscription upgraded!");
-      loadSubscription(); // Reload status
+      // 1. Load Razorpay Script
+      const isLoaded = await loadRazorpayScript();
+      if (!isLoaded) {
+        toast.error("Failed to load payment gateway. Please check your connection.");
+        setLoading(false);
+        return;
+      }
+
+      // 2. Create Order on Backend
+      const orderData = await api.createPaymentOrder(tierId);
+      
+      if (!orderData || !orderData.id) {
+        throw new Error("Invalid order data received from server");
+      }
+
+      // 3. Initialize Razorpay Options
+      const options = {
+        key: orderData.keyId, // Enter the Key ID generated from the Dashboard
+        amount: orderData.amount, // Amount is in currency subunits. Default currency is INR.
+        currency: orderData.currency,
+        name: "Nex Companion",
+        description: `Upgrade to ${tierId === 'TIER_1' ? 'Pro' : 'Unlimited'} Plan`,
+        image: "https://your-logo-url.com/logo.png", // Replace with actual logo if available
+        order_id: orderData.id, 
+        handler: async function (response: any) {
+          try {
+             // 4. Verify Payment on Backend
+            await api.verifyPayment({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+            });
+            
+            toast.success("Payment successful! Subscription upgraded.");
+            loadSubscription(); // Reload status
+          } catch (verifyError) {
+             console.error("Verification failed", verifyError);
+             toast.error("Payment verification failed. Please contact support.");
+          }
+        },
+        prefill: {
+          name: auth.currentUser?.displayName || "User",
+          email: auth.currentUser?.email || "user@example.com",
+          contact: "" // Can be added if phone number is available
+        },
+        notes: {
+          address: "Nex Companion Corporate Office"
+        },
+        theme: {
+          color: "#3399cc"
+        }
+      };
+
+      // 4. Open Razorpay Window
+      // @ts-ignore
+      const rzp1 = new window.Razorpay(options);
+      rzp1.on('payment.failed', function (response: any){
+        toast.error(`Payment Failed: ${response.error.description}`);
+      });
+      rzp1.open();
+
     } catch (error) {
-      console.error("Failed to upgrade:", error);
-      toast.error("Failed to upgrade subscription");
+      console.error("Failed to initiate upgrade:", error);
+      toast.error("Failed to initiate payment flow");
     } finally {
       setLoading(false);
     }
@@ -129,6 +203,9 @@ const Pricing = () => {
         >
           {plans.map((plan, index) => {
             const isCurrent = currentTier === plan.id;
+            // Hack for "Free" plan execution or disabled state
+            const isFree = plan.id === 'TIER_FREE';
+            
             return (
               <motion.div
                 key={plan.name}
@@ -169,15 +246,15 @@ const Pricing = () => {
 
                 {/* CTA */}
                 <button
-                  onClick={() => !isCurrent && handleUpgrade(plan.id)}
+                  onClick={() => !isCurrent && !isFree && handleUpgrade(plan.id)}
                   className={`w-full py-3 px-4 rounded-xl font-medium transition-all duration-300 ${
-                    isCurrent
+                    isCurrent || isFree
                       ? "bg-background-surface text-foreground-muted cursor-default"
                       : "bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                   }`}
-                  disabled={isCurrent || loading}
+                  disabled={isCurrent || loading || isFree}
                 >
-                  {isCurrent ? "Current plan" : loading ? "Upgrading..." : "Upgrade"}
+                  {isCurrent ? "Current plan" : isFree ? "Free Forever" : loading ? "Processing..." : "Upgrade"}
                 </button>
               </motion.div>
             );

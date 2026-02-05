@@ -60,6 +60,21 @@ export const api = {
         return response.data;
     },
 
+    // Payment / Razorpay
+    createPaymentOrder: async (planId: string) => {
+        const response = await apiInstance.post('/payment/create-order', { planId });
+        return response.data;
+    },
+
+    verifyPayment: async (paymentData: {
+        razorpay_order_id: string;
+        razorpay_payment_id: string;
+        razorpay_signature: string;
+    }) => {
+        const response = await apiInstance.post('/payment/verify', paymentData);
+        return response.data;
+    },
+
     getSubscriptionStatus: async () => {
         const response = await apiInstance.get('/subscription/status');
         return response.data;
