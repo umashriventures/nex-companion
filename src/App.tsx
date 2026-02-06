@@ -12,6 +12,7 @@ import Settings from "./pages/Settings";
 import Pricing from "./pages/Pricing";
 import NotFound from "./pages/NotFound";
 import { AuthProvider } from "./context/AuthContext";
+import About from "./pages/About";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +31,7 @@ const App = () => (
             <Route path="/memories" element={<Memories />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/pricing" element={<Pricing />} />
+            <Route path="/about" element={<About />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -6,6 +6,7 @@ import { api } from "@/services/api";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { auth } from "@/lib/firebase"; // Need auth to get user details if desired for prefill
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
 interface PlanTier {
   name: string;
@@ -68,6 +69,7 @@ const Pricing = () => {
   const navigate = useNavigate();
   const [currentTier, setCurrentTier] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
 
   useEffect(() => {
     loadSubscription();
@@ -81,6 +83,8 @@ const Pricing = () => {
       }
     } catch (error) {
       console.error("Failed to load subscription:", error);
+    } finally {
+        setInitializing(false);
     }
   };
 
@@ -195,6 +199,9 @@ const Pricing = () => {
 
       {/* Plans */}
       <div className="max-w-4xl mx-auto px-6 pb-12 relative z-10">
+        {initializing ? (
+            <LoadingSpinner />
+        ) : (
         <motion.div
           className="grid md:grid-cols-3 gap-6"
           initial={{ opacity: 0 }}
@@ -260,6 +267,7 @@ const Pricing = () => {
             );
           })}
         </motion.div>
+        )}
       </div>
 
       {/* Footer note */}

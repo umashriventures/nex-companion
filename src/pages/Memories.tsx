@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { api } from "@/services/api";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
 interface Memory {
   id: string;
@@ -19,10 +20,30 @@ const Memories = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [newMemory, setNewMemory] = useState("");
   const [loading, setLoading] = useState(true);
+  const [memoryLimit, setMemoryLimit] = useState<number>(20); // Default safely
 
   useEffect(() => {
     loadMemories();
+    fetchLimits();
   }, []);
+
+  const fetchLimits = async () => {
+    try {
+        const status = await api.getSubscriptionStatus();
+        if (status && typeof status.memory_limit === 'number') {
+            setMemoryLimit(status.memory_limit);
+        } else {
+             // Fallback to bootstrap if subscription status fails or doesn't have it? 
+             // Or just try bootstrap as well
+             const bootstrap = await api.bootstrap();
+             if (bootstrap && typeof bootstrap.memory_limit === 'number') {
+                 setMemoryLimit(bootstrap.memory_limit);
+             }
+        }
+    } catch (error) {
+        console.error("Failed to fetch limits", error);
+    }
+  };
 
   const loadMemories = async () => {
     try {
@@ -121,10 +142,16 @@ const Memories = () => {
         <p className="text-foreground-muted text-center text-sm">
           What NEX remembers about you
         </p>
+        <p className="text-foreground-subtle text-center text-xs mt-2">
+            {loading ? "..." : `${memories.length} / ${memoryLimit} slots used`}
+        </p>
       </motion.div>
 
       {/* Memories list */}
       <div className="max-w-lg mx-auto px-6 pb-12">
+        {loading ? (
+             <LoadingSpinner />
+        ) : (
         <motion.div
           className="space-y-3"
           initial={{ opacity: 0 }}
@@ -243,6 +270,7 @@ const Memories = () => {
             </motion.button>
           )}
         </motion.div>
+        )}
       </div>
     </div>
   );

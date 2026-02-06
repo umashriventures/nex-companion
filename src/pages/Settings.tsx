@@ -1,34 +1,84 @@
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, User, CreditCard, LogOut, Info } from "lucide-react";
+import { ArrowLeft, User, CreditCard, LogOut, Info, MessageSquare } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { api } from "@/services/api";
+import { auth } from "@/lib/firebase"; // Direct auth import for signOut if needed, though useAuth exposes user
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 
 const Settings = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const [messagesLeft, setMessagesLeft] = useState<number | null>(null);
+  const [subscriptionTier, setSubscriptionTier] = useState<string>("Free");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      setLoading(true);
+      try {
+        const status = await api.bootstrap(); // Using bootstrap as requested
+        if (status) {
+            if (status.tier) setSubscriptionTier(status.tier);
+            
+            // Calculate messages left from bootstrap data
+            if (typeof status.daily_limit === 'number' && typeof status.messages_used_today === 'number') {
+                const left = Math.max(0, status.daily_limit - status.messages_used_today);
+                setMessagesLeft(left);
+            }
+        }
+      } catch (error) {
+        console.error("Failed to fetch status:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+        fetchStatus();
+    }
+  }, [user]);
+
+  const handleLogout = async () => {
+      try {
+          await auth.signOut();
+          navigate("/");
+      } catch (error) {
+          console.error("Logout failed", error);
+      }
+  };
 
   const settingsItems = [
     {
       icon: User,
       label: "Account",
-      value: "you@example.com",
+      value: user?.email || "Not logged in",
       onClick: () => {},
     },
     {
       icon: CreditCard,
       label: "Subscription",
-      value: "Free",
+      value: loading ? <LoadingSpinner size={14} className="py-0" /> : subscriptionTier,
       onClick: () => navigate("/pricing"),
+    },
+    {
+        icon: MessageSquare,
+        label: "Messages Left Today",
+        value: loading ? <LoadingSpinner size={14} className="py-0" /> : (messagesLeft !== null ? messagesLeft.toString() : "..."),
+        onClick: () => {},
     },
     {
       icon: Info,
       label: "About NEX",
       value: "",
-      onClick: () => {},
+      onClick: () => navigate("/about"),
     },
     {
       icon: LogOut,
       label: "Log out",
       value: "",
-      onClick: () => navigate("/"),
+      onClick: handleLogout,
       isDestructive: true,
     },
   ];
@@ -65,11 +115,12 @@ const Settings = () => {
             <motion.button
               key={item.label}
               onClick={item.onClick}
+              disabled={!item.onClick || item.label === "Messages Left Today" || item.label === "Account"}
               className={`flex items-center gap-4 w-full p-4 rounded-2xl transition-colors duration-200
                 ${
                   item.isDestructive
                     ? "hover:bg-destructive/10 text-destructive"
-                    : "hover:bg-background-surface text-foreground"
+                    : (item.label === "Messages Left Today" || item.label === "Account") ? "text-foreground cursor-default" : "hover:bg-background-surface text-foreground"
                 }`}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
