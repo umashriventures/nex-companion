@@ -8,18 +8,19 @@ interface Message {
 
 interface ChatTranscriptProps {
   messages: Message[];
+  interimTranscript?: string;
   isExpanded: boolean;
   showHint: boolean;
 }
 
-const ChatTranscript = ({ messages, isExpanded, showHint }: ChatTranscriptProps) => {
+const ChatTranscript = ({ messages, interimTranscript, isExpanded, showHint }: ChatTranscriptProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, interimTranscript]);
 
   return (
     <motion.div
@@ -34,8 +35,8 @@ const ChatTranscript = ({ messages, isExpanded, showHint }: ChatTranscriptProps)
         ref={scrollRef}
         className="h-full overflow-y-auto no-scrollbar px-6 py-8"
       >
-        <AnimatePresence mode="wait">
-          {messages.length === 0 ? (
+        <AnimatePresence mode="popLayout">
+          {messages.length === 0 && !interimTranscript ? (
             <motion.div
               key="hint"
               className="h-full flex items-end justify-center pb-8"
@@ -79,6 +80,23 @@ const ChatTranscript = ({ messages, isExpanded, showHint }: ChatTranscriptProps)
                   </div>
                 </motion.div>
               ))}
+              
+              {/* Interim Transcript */}
+              {interimTranscript && (
+                <motion.div
+                  key="interim"
+                  className="flex justify-end"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 0.7, scale: 1 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="max-w-[80%] px-5 py-3 rounded-2xl bg-background-surface/50 border border-orb/20 border-dashed">
+                    <p className="text-sm leading-relaxed italic text-foreground-muted">
+                      {interimTranscript}...
+                    </p>
+                  </div>
+                </motion.div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

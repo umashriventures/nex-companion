@@ -35,8 +35,11 @@ export const api = {
         return response.data;
     },
 
-    interact: async (input: string): Promise<InteractResponse> => {
-        const response = await apiInstance.post('/nex/interact', { input });
+    interact: async (input: string, conversation_history: { role: string; content: string }[] | null = null): Promise<InteractResponse> => {
+        const response = await apiInstance.post('/nex/interact', {
+            input,
+            conversation_history
+        });
         return response.data;
     },
 

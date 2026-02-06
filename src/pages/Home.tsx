@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import Orb, { type OrbState } from "@/components/Orb";
 import ChatInput from "@/components/ChatInput";
 import ChatTranscript from "@/components/ChatTranscript";
-import { Settings, Brain } from "lucide-react";
+import { Settings, Brain, HelpCircle } from "lucide-react";
 import { api } from "@/services/api";
 import { toast } from "sonner";
 
@@ -20,6 +20,7 @@ const Home = () => {
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [mode, setMode] = useState<InteractionMode>("presence");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [interimTranscript, setInterimTranscript] = useState("");
   const [isTransitioning, setIsTransitioning] = useState(false);
   
   const holdTimerRef = useRef<number | null>(null);
@@ -30,6 +31,11 @@ const Home = () => {
   const orbOpacity = useTransform(orbX, [-150, 0], [0.6, 1]);
   const orbScale = useTransform(orbX, [-150, 0], [0.7, 1]);
 
+  // Speech Recognition Refs
+  const recognitionRef = useRef<any>(null);
+  const transcriptRef = useRef("");
+  const interactRef = useRef<any>(null);
+
 
 // ... imports
 
@@ -37,8 +43,14 @@ const Home = () => {
   const handleNexInteraction = useCallback(async (userMessage: string) => {
     setOrbState("thinking");
     
+    // Get last 5 messages for history
+    const history = messages.slice(-5).map(m => ({
+        role: m.role,
+        content: m.content
+    }));
+
     try {
-      const response = await api.interact(userMessage);
+      const response = await api.interact(userMessage, history);
       
       setOrbState("speaking");
       setMessages(prev => [...prev, { role: "nex", content: response.reply }]);
@@ -51,6 +63,55 @@ const Home = () => {
       toast.error("Failed to connect to NEX.");
       setOrbState("idle");
     }
+  }, [messages]);
+
+  // Keep interact ref updated
+  useEffect(() => {
+    interactRef.current = handleNexInteraction;
+  }, [handleNexInteraction]);
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      // Optional: Visual feedback handling if needed distinct from "listening" state
+    };
+
+    recognition.onresult = (event: any) => {
+      const text = Array.from(event.results)
+        .map((result: any) => result[0].transcript)
+        .join("");
+      transcriptRef.current = text;
+      setInterimTranscript(text);
+    };
+
+    recognition.onend = () => {
+      const text = transcriptRef.current.trim();
+      setInterimTranscript("");
+      if (text) {
+        setMessages(prev => [...prev, { role: "user", content: text }]);
+        interactRef.current(text);
+      } else {
+        setOrbState((prev) => prev === "listening" ? "idle" : prev);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech Recognition Error:", event.error);
+      if (event.error === 'not-allowed') {
+        toast.error("Microphone access denied.");
+      }
+      setOrbState("idle");
+    };
+
+    recognitionRef.current = recognition;
   }, []);
 
   // Handle voice interaction (press to talk)
@@ -59,6 +120,13 @@ const Home = () => {
     
     holdTimerRef.current = window.setTimeout(() => {
       setOrbState("listening");
+      transcriptRef.current = "";
+      setInterimTranscript("");
+      try {
+        recognitionRef.current?.start();
+      } catch (err) {
+        console.error("Failed to start recognition:", err);
+      }
     }, 100);
   }, [mode]);
 
@@ -68,9 +136,8 @@ const Home = () => {
     }
 
     if (orbState === "listening") {
-      // User requested to remove the auto "Hello NEX" message.
-      // We just return to idle state.
-      setOrbState("idle");
+      recognitionRef.current?.stop();
+      // State transition handled in onend
     }
   }, [orbState]);
 
@@ -151,44 +218,77 @@ const Home = () => {
     };
   }, [handlePressStart, handlePressEnd, handleReturnToPresence, mode]);
 
-  // Orb positioning based on mode
   const getOrbContainerStyles = () => {
     if (mode === "chat") {
       return {
         position: "fixed" as const,
         left: "24px",
         bottom: "24px",
-        transform: "none",
       };
     }
     return {
       position: "absolute" as const,
       left: "50%",
-      top: "75%", // Centered in lower half, slightly toward bottom
-      transform: "translate(-50%, -50%)",
+      bottom: "0", // Position at bottom of page
     };
   };
+
+  const [showTooltip, setShowTooltip] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col bg-background relative overflow-hidden select-none">
       {/* Ambient background glow */}
+      {/* ... (rest of the glow code) */}
       <motion.div
         className="absolute inset-0 pointer-events-none"
         animate={{
           background: mode === "chat" 
             ? "radial-gradient(ellipse at 10% 90%, hsl(var(--orb) / 0.03), transparent 50%)"
-            : "radial-gradient(ellipse at 50% 75%, hsl(var(--orb) / 0.05), transparent 60%)",
+            : "radial-gradient(ellipse at 50% 100%, hsl(var(--orb) / 0.05), transparent 60%)",
         }}
         transition={{ duration: 0.8 }}
       />
 
       {/* Navigation buttons */}
       <motion.div
-        className="absolute top-6 right-6 flex gap-4 z-20"
+        className="absolute top-6 right-6 flex items-center gap-2 z-20"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.5 }}
       >
+        <div className="relative">
+          <button
+            onMouseEnter={() => setShowTooltip(true)}
+            onMouseLeave={() => setShowTooltip(false)}
+            className="p-3 text-foreground-subtle hover:text-foreground-muted 
+                       transition-colors duration-300 rounded-full hover:bg-background-surface cursor-help"
+            title="Help"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </button>
+
+          {/* Tooltip */}
+          <AnimatePresence>
+            {showTooltip && (
+              <motion.div
+                className="absolute top-full right-0 mt-2 px-5 py-3 rounded-2xl bg-background-surface/90 backdrop-blur-md 
+                           border border-foreground/5 shadow-2xl flex flex-col items-end gap-1.5 z-30"
+                initial={{ opacity: 0, scale: 0.9, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                transition={{ type: "spring", damping: 20, stiffness: 300 }}
+              >
+                <p className="text-foreground-muted text-sm font-medium whitespace-nowrap">
+                  press the orb or hold the spacebar to speak to nex
+                </p>
+                <p className="text-foreground-subtle/60 text-xs whitespace-nowrap">
+                  slide the orb to left to activate text mode
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         <button
           onClick={() => navigate("/memories")}
           className="p-3 text-foreground-subtle hover:text-foreground-muted 
@@ -210,6 +310,7 @@ const Home = () => {
       {/* Transcript area */}
       <ChatTranscript 
         messages={messages} 
+        interimTranscript={interimTranscript}
         isExpanded={mode === "chat"} 
         showHint={mode === "presence" && messages.length === 0}
       />
@@ -231,6 +332,8 @@ const Home = () => {
         style={getOrbContainerStyles()}
         animate={{
           scale: mode === "chat" ? 0.4 : 1,
+          x: mode === "chat" ? 0 : "-50%",
+          y: mode === "chat" ? 0 : "50%", // Half-submerge the orb in presence mode
         }}
         transition={{ 
           type: "spring", 
@@ -265,30 +368,7 @@ const Home = () => {
         </motion.div>
       </motion.div>
 
-      {/* Hint text (presence mode only) */}
-      <AnimatePresence>
-        {mode === "presence" && (
-          <motion.div
-            className="absolute bottom-8 left-0 right-0 flex flex-col items-center gap-2"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          >
-            <p className="text-foreground-subtle text-sm">
-              Press and hold to speak
-            </p>
-            <motion.p 
-              className="text-foreground-subtle/50 text-xs"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 2 }}
-            >
-              ← swipe orb to type
-            </motion.p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Prompt / Info Button placeholder removed from here */}
 
       {/* Chat mode hint for returning */}
       <AnimatePresence>
